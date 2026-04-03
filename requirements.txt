@@ -4,7 +4,7 @@ pydantic
 sse-starlette
 edge-tts
 groq
-moviepy>=1.0.3
+moviepy==1.0.3
 numpy
 Pillow
 imageio-ffmpeg
