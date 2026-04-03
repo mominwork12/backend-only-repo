@@ -14,6 +14,39 @@ import proglog
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 FONT_PATH = "fonts/Montserrat-Black.ttf"
+FAST_RENDER_MODE = os.getenv("FAST_RENDER_MODE", "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
+    ratio = aspect_ratio if aspect_ratio in {"9:16", "16:9", "1:1"} else "9:16"
+    requested_resolution = str(resolution or "720p").lower()
+
+    if requested_resolution not in {"1080p", "720p", "540p"}:
+        requested_resolution = "720p"
+
+    # Keep hosted rendering responsive by default.
+    if FAST_RENDER_MODE and requested_resolution == "1080p":
+        requested_resolution = "720p"
+
+    if ratio == "9:16":
+        dims_by_resolution = {"1080p": (1080, 1920), "720p": (720, 1280), "540p": (540, 960)}
+    elif ratio == "16:9":
+        dims_by_resolution = {"1080p": (1920, 1080), "720p": (1280, 720), "540p": (960, 540)}
+    else:
+        dims_by_resolution = {"1080p": (1080, 1080), "720p": (720, 720), "540p": (540, 540)}
+
+    render_dims = dims_by_resolution[requested_resolution]
+
+    try:
+        target_fps = int(fps)
+    except Exception:
+        target_fps = 24
+
+    target_fps = max(12, min(30, target_fps))
+    if FAST_RENDER_MODE:
+        target_fps = min(target_fps, 24)
+
+    return render_dims, target_fps, requested_resolution.upper()
 
 class SSEVideoLogger(proglog.ProgressBarLogger):
     """
@@ -33,9 +66,11 @@ class SSEVideoLogger(proglog.ProgressBarLogger):
         if bar == 't':
             total = self.bars[bar]['total']
             perc = int((value / total) * 100) if total else 0
+            # Reserve 0-40 for prep, use 40-95 for actual frame encode progress.
+            render_stage_perc = min(95, 40 + int(perc * 0.55))
             # Route sync logger back to the async loop
             asyncio.run_coroutine_threadsafe(
-                update_job_progress(self.job_id, JobStatus.RENDERING, "Compositing Video", perc, f"Rendering video frame {value}/{total}..."),
+                update_job_progress(self.job_id, JobStatus.RENDERING, "Compositing Video", render_stage_perc, f"Rendering video frame {value}/{total}..."),
                 self.loop
             )
 
@@ -109,7 +144,7 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
             })
             current_time += speed_sec
             
-        await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 100, f"Recovered {len(timestamps)} word boundaries...")
+        await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 20, f"Recovered {len(timestamps)} word boundaries...")
 
         # 2: Rendering Engine Thread Wrapper
         def render_video():
@@ -118,31 +153,65 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
             
             duration = current_time if current_time > 0 else 1.0
             
-            # Resolutions based on UI Configs
-            res = (1080, 1920) if request.config.aspect_ratio == "9:16" else (1920, 1080)
-            if request.config.aspect_ratio == "1:1": res = (1080, 1080)
+            # Hosted-safe render profile to avoid long stalls on free CPU.
+            render_dims, render_fps, render_resolution = get_render_profile(
+                request.config.aspect_ratio,
+                getattr(request.config, "resolution", "720p"),
+                getattr(request.config, "fps", 24),
+            )
+
+            asyncio.run_coroutine_threadsafe(
+                update_job_progress(
+                    job_id,
+                    JobStatus.RENDERING,
+                    "Preparing Render",
+                    30,
+                    f"Preparing frames at {render_resolution} / {render_fps} FPS...",
+                ),
+                loop,
+            )
             
             # MoviePy base background template 
-            bg = ColorClip(size=res, color=(30, 30, 42)).set_duration(duration)
+            bg = ColorClip(size=render_dims, color=(30, 30, 42)).set_duration(duration)
             
             word_clips = []
-            for t in timestamps:
+            total_words = len(timestamps)
+            for idx, t in enumerate(timestamps):
                 # Sanity fallback check
                 if t['start'] < duration and t['end'] <= duration:
-                    clip = create_word_clip(t, resolution=res)
+                    clip = create_word_clip(t, resolution=render_dims)
                     word_clips.append(clip)
+                if total_words and (((idx + 1) % 8 == 0) or (idx + 1 == total_words)):
+                    prep_perc = 30 + int(((idx + 1) / total_words) * 10)
+                    asyncio.run_coroutine_threadsafe(
+                        update_job_progress(
+                            job_id,
+                            JobStatus.RENDERING,
+                            "Preparing Frames",
+                            prep_perc,
+                            f"Preparing caption frames {idx + 1}/{total_words}...",
+                        ),
+                        loop,
+                    )
                     
             # Stitch them together
             final_video = CompositeVideoClip([bg] + word_clips)
             
             # Connect the Next.js visual logger to MoviePy
             logger = SSEVideoLogger(job_id, loop)
-            final_video.write_videofile(out_path, fps=request.config.fps, logger=logger, preset='ultrafast')
+            final_video.write_videofile(
+                out_path,
+                fps=render_fps,
+                logger=logger,
+                preset='ultrafast',
+                threads=2,
+                bitrate='1500k',
+            )
             
             return f"/api/v1/outputs/{video_filename}"
         
         # Async execution of blocking MoviePy
-        await update_job_progress(job_id, JobStatus.RENDERING, "Compositing Video", 0, "Booting Hormozi render engine...")
+        await update_job_progress(job_id, JobStatus.RENDERING, "Compositing Video", 25, "Booting render engine...")
         video_url = await loop.run_in_executor(None, render_video)
         
         await update_job_progress(job_id, JobStatus.DONE, "Complete Phase", 100, "Your cinematic video is ready!", result_url=video_url)
@@ -158,7 +227,7 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
         await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 10, "Transcribing Audio via Groq AI...")
         timestamps = await transcribe_audio_to_words(audio_path)
         
-        await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 100, f"Recovered {len(timestamps)} word boundaries...")
+        await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 20, f"Recovered {len(timestamps)} word boundaries...")
 
         def render_video():
             video_filename = f"{job_id}.mp4"
@@ -168,19 +237,45 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
             audio_clip = AudioFileClip(audio_path)
             duration = audio_clip.duration
             
-            # Resolutions based on UI Configs
-            res = (1080, 1920) if config.aspect_ratio == "9:16" else (1920, 1080)
-            if config.aspect_ratio == "1:1": res = (1080, 1080)
+            render_dims, render_fps, render_resolution = get_render_profile(
+                config.aspect_ratio,
+                getattr(config, "resolution", "720p"),
+                getattr(config, "fps", 24),
+            )
+
+            asyncio.run_coroutine_threadsafe(
+                update_job_progress(
+                    job_id,
+                    JobStatus.RENDERING,
+                    "Preparing Render",
+                    30,
+                    f"Preparing frames at {render_resolution} / {render_fps} FPS...",
+                ),
+                loop,
+            )
             
             # MoviePy base background template 
-            bg = ColorClip(size=res, color=(30, 30, 42)).set_duration(duration)
+            bg = ColorClip(size=render_dims, color=(30, 30, 42)).set_duration(duration)
             
             word_clips = []
-            for t in timestamps:
+            total_words = len(timestamps)
+            for idx, t in enumerate(timestamps):
                 # Sanity fallback check
                 if t['start'] < duration and t['end'] <= duration:
-                    clip = create_word_clip(t, resolution=res)
+                    clip = create_word_clip(t, resolution=render_dims)
                     word_clips.append(clip)
+                if total_words and (((idx + 1) % 8 == 0) or (idx + 1 == total_words)):
+                    prep_perc = 30 + int(((idx + 1) / total_words) * 10)
+                    asyncio.run_coroutine_threadsafe(
+                        update_job_progress(
+                            job_id,
+                            JobStatus.RENDERING,
+                            "Preparing Frames",
+                            prep_perc,
+                            f"Preparing caption frames {idx + 1}/{total_words}...",
+                        ),
+                        loop,
+                    )
                     
             # Stitch them together
             final_video = CompositeVideoClip([bg] + word_clips)
@@ -188,12 +283,20 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
             
             # Connect the Next.js visual logger to MoviePy
             logger = SSEVideoLogger(job_id, loop)
-            final_video.write_videofile(out_path, fps=config.fps, logger=logger, preset='ultrafast')
+            final_video.write_videofile(
+                out_path,
+                fps=render_fps,
+                logger=logger,
+                preset='ultrafast',
+                threads=2,
+                bitrate='1800k',
+                audio_codec='aac',
+            )
             
             return f"/api/v1/outputs/{video_filename}"
         
         # Async execution of blocking MoviePy
-        await update_job_progress(job_id, JobStatus.RENDERING, "Compositing Video", 0, "Booting Hormozi render engine...")
+        await update_job_progress(job_id, JobStatus.RENDERING, "Compositing Video", 25, "Booting render engine...")
         video_url = await loop.run_in_executor(None, render_video)
         
         await update_job_progress(job_id, JobStatus.DONE, "Complete Phase", 100, "Your cinematic video is ready!", result_url=video_url)
