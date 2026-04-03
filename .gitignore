@@ -1,0 +1,14 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Local env and outputs
+.env
+outputs/
+testsprite_tests/
+
+# Keep env template committed
+!.env.example

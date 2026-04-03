@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: textmotion-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: OUTPUT_DIR
+        value: outputs
