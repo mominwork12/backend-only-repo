@@ -98,6 +98,14 @@ async def cancel_job(job_id: str):
         loop = asyncio.get_event_loop()
         loop.create_task(update_job_progress(job_id, JobStatus.CANCELLED, "Cancelled", 0, "Cancelled by user.", error="Generation Cancelled by User"))
     return {"message": "Job cancellation requested"}
+
+@app.get("/api/v1/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
 @app.get("/api/v1/jobs/{job_id}/stream")
 async def stream_job_status(request: Request, job_id: str):
     """
