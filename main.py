@@ -13,13 +13,15 @@ from core.engine import process_text_generation, process_audio_generation
 app = FastAPI(title="TextMotion AI Backend")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
 
-# Allow frontend origins from env (comma-separated), fallback to permissive for local/dev.
+# Allow frontend origins from env (comma-separated). Also supports regex for Vercel aliases.
 cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*")
+cors_origin_regex = os.getenv("CORS_ALLOW_ORIGIN_REGEX", "").strip() or None
 allow_origins = ["*"] if cors_origins_env.strip() == "*" else [o.strip() for o in cors_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
