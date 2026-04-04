@@ -27,7 +27,7 @@ import proglog
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 FONT_PATH = "fonts/Montserrat-Black.ttf"
-ARABIC_FONT_PATH = "fonts/NotoNaskhArabic-Regular.ttf"
+ARABIC_FONT_PATH = "fonts/arial.ttf"
 FAST_RENDER_MODE = os.getenv("FAST_RENDER_MODE", "1").strip().lower() in {"1", "true", "yes", "on"}
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 RTL_RE = re.compile(r"[\u0590-\u05FF\u0600-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
