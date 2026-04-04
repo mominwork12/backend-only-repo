@@ -25,8 +25,8 @@ class Job(BaseModel):
 
 class GenerationConfig(BaseModel):
     aspect_ratio: str = "9:16"
-    fps: int = 20
-    resolution: str = "540p"
+    fps: int = 30
+    resolution: str = "1080p"
     style: str = "tiktok"
     speed: str = "250"
     text_effect: str = "HORMOZI BOLD POP"

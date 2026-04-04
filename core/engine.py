@@ -37,11 +37,6 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
         requested_resolution = "720p"
 
     # Keep hosted rendering responsive by default.
-    if FAST_RENDER_MODE:
-        # Aggressive speed profile for hosted/free instances.
-        if requested_resolution in {"1080p", "720p"}:
-            requested_resolution = "540p"
-
     if ratio == "9:16":
         dims_by_resolution = {"1080p": (1080, 1920), "720p": (720, 1280), "540p": (540, 960)}
     elif ratio == "16:9":
@@ -57,9 +52,6 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
         target_fps = 24
 
     target_fps = max(12, min(30, target_fps))
-    if FAST_RENDER_MODE:
-        target_fps = min(target_fps, 20)
-
     return render_dims, target_fps, requested_resolution.upper()
 
 
