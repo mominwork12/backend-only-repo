@@ -25,8 +25,8 @@ class Job(BaseModel):
 
 class GenerationConfig(BaseModel):
     aspect_ratio: str = "9:16"
-    fps: int = 24
-    resolution: str = "720p"
+    fps: int = 20
+    resolution: str = "540p"
     style: str = "tiktok"
     speed: str = "250"
     text_effect: str = "HORMOZI BOLD POP"
@@ -39,8 +39,8 @@ class GenerationConfig(BaseModel):
     target_language: str = "original"
     accessibility_preset: str = "default"
     keyword_highlighting: bool = True
-    smart_silence_removal: bool = False
-    silence_gap_threshold_ms: int = 600
+    smart_silence_removal: bool = True
+    silence_gap_threshold_ms: int = 500
     batch_processing: bool = False
 
 class GenerateTextRequest(BaseModel):

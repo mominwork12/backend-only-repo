@@ -37,8 +37,10 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
         requested_resolution = "720p"
 
     # Keep hosted rendering responsive by default.
-    if FAST_RENDER_MODE and requested_resolution == "1080p":
-        requested_resolution = "720p"
+    if FAST_RENDER_MODE:
+        # Aggressive speed profile for hosted/free instances.
+        if requested_resolution in {"1080p", "720p"}:
+            requested_resolution = "540p"
 
     if ratio == "9:16":
         dims_by_resolution = {"1080p": (1080, 1920), "720p": (720, 1280), "540p": (540, 960)}
@@ -56,7 +58,7 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
 
     target_fps = max(12, min(30, target_fps))
     if FAST_RENDER_MODE:
-        target_fps = min(target_fps, 24)
+        target_fps = min(target_fps, 20)
 
     return render_dims, target_fps, requested_resolution.upper()
 
@@ -87,6 +89,9 @@ def get_caption_style(config):
         style["font_size"] = max(style["font_size"], 140)
     elif preset == "safe_colors":
         style["main_color"] = "#00F5FF"
+
+    if FAST_RENDER_MODE:
+        style["outline_width"] = max(6, style["outline_width"] - 4)
 
     return style
 
@@ -121,9 +126,6 @@ def create_word_clip(word_data, resolution, config):
     Draws Hormozi-style text captions completely from scratch using Pillow.
     Guarantees it works natively on Windows without ImageMagick.
     """
-    img = Image.new('RGBA', resolution, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    
     style = get_caption_style(config)
     font_size = style["font_size"]
     try:
@@ -132,14 +134,21 @@ def create_word_clip(word_data, resolution, config):
         font = ImageFont.load_default()
 
     word = word_data['word'].upper()
-    
-    # Pillow bounding box calculations
-    bbox = draw.textbbox((0, 0), word, font=font)
+
+    # Measure on tiny canvas then render only the text-sized bitmap
+    measure_img = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+    measure_draw = ImageDraw.Draw(measure_img)
+    bbox = measure_draw.textbbox((0, 0), word, font=font)
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
-    
-    x = (resolution[0] - w) / 2
-    y = (resolution[1] - h) / 2
+
+    pad = 26 if not FAST_RENDER_MODE else 14
+    img_w = max(16, w + pad * 2)
+    img_h = max(16, h + pad * 2)
+    img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    x = pad
+    y = pad
     
     # Hormozi styling: Thick stroke, high contrast
     outline_color = (15, 15, 20, 255)
@@ -155,8 +164,9 @@ def create_word_clip(word_data, resolution, config):
     fill_color = (*accent_color, 255) if is_emphasized else (255, 255, 255, 255)
     
     # Shadow offset (Simulating a premium glow/drop shadow)
-    shadow_offset = 8
-    draw.text((x + shadow_offset, y + shadow_offset), word, font=font, fill=(0,0,0,150), stroke_width=outline_width, stroke_fill=(0,0,0,100))
+    if not FAST_RENDER_MODE:
+        shadow_offset = 8
+        draw.text((x + shadow_offset, y + shadow_offset), word, font=font, fill=(0,0,0,150), stroke_width=outline_width, stroke_fill=(0,0,0,100))
     
     # Main bold text
     draw.text((x, y), word, font=font, fill=fill_color, stroke_width=outline_width, stroke_fill=outline_color)
@@ -169,7 +179,7 @@ def create_word_clip(word_data, resolution, config):
     dur = max(0.1, duration) # ensure at least 0.1s pop
     
     clip = clip.set_start(word_data['start']).set_end(word_data['start'] + dur)
-    clip = clip.set_position('center')
+    clip = clip.set_position(("center", "center"))
     
     return clip
 
@@ -192,6 +202,8 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
 
         words = working_text.strip().split()
         speed_ms = int(getattr(request.config, 'speed', '250'))
+        if FAST_RENDER_MODE and len(words) > 80 and speed_ms > 180:
+            speed_ms = 180
         speed_sec = speed_ms / 1000.0
         
         timestamps = []
@@ -270,7 +282,7 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
                 logger=logger,
                 preset='ultrafast',
                 threads=2,
-                bitrate='1500k',
+                bitrate='1200k' if FAST_RENDER_MODE else '1500k',
             )
             
             return f"/api/v1/outputs/{video_filename}"
@@ -402,7 +414,7 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
                 logger=logger,
                 preset='ultrafast',
                 threads=2,
-                bitrate='1800k',
+                bitrate='1400k' if FAST_RENDER_MODE else '1800k',
                 audio_codec='aac',
             )
             
