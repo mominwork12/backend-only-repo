@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -26,7 +27,81 @@ import proglog
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 FONT_PATH = "fonts/Montserrat-Black.ttf"
+ARABIC_FONT_PATH = "fonts/NotoNaskhArabic-Regular.ttf"
 FAST_RENDER_MODE = os.getenv("FAST_RENDER_MODE", "1").strip().lower() in {"1", "true", "yes", "on"}
+ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
+RTL_RE = re.compile(r"[\u0590-\u05FF\u0600-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
+
+try:
+    import arabic_reshaper  # type: ignore
+    from bidi.algorithm import get_display  # type: ignore
+except Exception:  # pragma: no cover - optional dependency fallback
+    arabic_reshaper = None
+    get_display = None
+
+
+def has_arabic_text(text: str) -> bool:
+    return bool(ARABIC_RE.search(text or ""))
+
+
+def has_rtl_text(text: str) -> bool:
+    return bool(RTL_RE.search(text or ""))
+
+
+def prepare_display_text(raw_text: str) -> str:
+    text = str(raw_text or "").strip()
+    if not text:
+        return ""
+
+    # Preserve non-Latin scripts (Arabic/Hebrew/etc.) and apply shaping for Arabic.
+    if has_rtl_text(text):
+        if has_arabic_text(text) and arabic_reshaper and get_display:
+            try:
+                reshaped = arabic_reshaper.reshape(text)
+                return get_display(reshaped)
+            except Exception:
+                return text
+        return text
+
+    return text.upper()
+
+
+def load_caption_font_for_text(text: str, size: int):
+    font_candidates = []
+
+    if has_arabic_text(text):
+        font_candidates.extend(
+            [
+                ARABIC_FONT_PATH,
+                "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+                "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/segoeui.ttf",
+            ]
+        )
+
+    font_candidates.extend(
+        [
+            FONT_PATH,
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/arialbd.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+        ]
+    )
+
+    seen = set()
+    for candidate in font_candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            return ImageFont.truetype(candidate, size)
+        except Exception:
+            continue
+
+    return ImageFont.load_default()
 
 
 def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
@@ -106,6 +181,50 @@ def get_caption_style(config):
 
     return style
 
+
+def should_apply_watermark(config) -> bool:
+    tier = str(getattr(config, "plan_tier", "free")).strip().lower()
+    watermark_enabled = bool(getattr(config, "watermark_enabled", True))
+    if tier in {"pro", "business", "enterprise"}:
+        return watermark_enabled
+    return True
+
+
+def create_watermark_overlay(resolution, duration, config):
+    width, height = resolution
+    text = str(getattr(config, "watermark_text", "TextMotionAI")).strip() or "TextMotionAI"
+    font_size = max(18, min(54, int(min(width, height) * 0.04)))
+
+    try:
+        font = ImageFont.truetype(FONT_PATH, font_size)
+    except Exception:
+        font = ImageFont.load_default()
+
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    pad_x = max(16, int(width * 0.02))
+    pad_y = max(16, int(height * 0.02))
+    x = width - text_w - pad_x
+    y = height - text_h - pad_y
+
+    # Gentle badge background for readability.
+    rect_pad_x = 16
+    rect_pad_y = 8
+    draw.rounded_rectangle(
+        [x - rect_pad_x, y - rect_pad_y, x + text_w + rect_pad_x, y + text_h + rect_pad_y],
+        radius=8,
+        fill=(0, 0, 0, 110),
+    )
+    draw.text((x + 1, y + 1), text, font=font, fill=(0, 0, 0, 180))
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 220))
+
+    return ImageClip(np.array(img)).set_duration(duration).set_position((0, 0))
+
+
 class SSEVideoLogger(proglog.ProgressBarLogger):
     """
     Hooks directly into MoviePy's rendering engine and pushes live 0-100% 
@@ -139,12 +258,9 @@ def create_word_clip(word_data, resolution, config):
     """
     style = get_caption_style(config)
     font_size = style["font_size"]
-    try:
-        font = ImageFont.truetype(FONT_PATH, font_size)
-    except:
-        font = ImageFont.load_default()
-
-    word = word_data['word'].upper()
+    raw_word = str(word_data.get("word", ""))
+    word = prepare_display_text(raw_word)
+    font = load_caption_font_for_text(word, font_size)
 
     # Measure on tiny canvas then render only the text-sized bitmap
     measure_img = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
@@ -283,7 +399,10 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
                     )
                     
             # Stitch them together
-            final_video = CompositeVideoClip([bg] + word_clips)
+            layers = [bg] + word_clips
+            if should_apply_watermark(request.config):
+                layers.append(create_watermark_overlay(render_dims, duration, request.config))
+            final_video = CompositeVideoClip(layers)
             
             # Connect the Next.js visual logger to MoviePy
             logger = SSEVideoLogger(job_id, loop)
@@ -414,7 +533,10 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
                     )
                     
             # Stitch them together
-            final_video = CompositeVideoClip([bg] + word_clips)
+            layers = [bg] + word_clips
+            if should_apply_watermark(config):
+                layers.append(create_watermark_overlay(render_dims, duration, config))
+            final_video = CompositeVideoClip(layers)
             final_video = final_video.set_audio(audio_clip)
             
             # Connect the Next.js visual logger to MoviePy

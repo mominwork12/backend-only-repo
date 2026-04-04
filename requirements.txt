@@ -9,3 +9,5 @@ numpy
 Pillow
 imageio-ffmpeg
 python-multipart
+arabic-reshaper
+python-bidi
