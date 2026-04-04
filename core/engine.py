@@ -296,25 +296,33 @@ def create_word_clip(word_data, resolution, config):
     raw_word = str(word_data.get("word", ""))
     word = prepare_display_text(raw_word)
     font = load_caption_font_for_text(word, font_size)
+    outline_width = style["outline_width"]
+    shadow_offset = 0 if FAST_RENDER_MODE else 8
 
-    # Measure on tiny canvas then render only the text-sized bitmap
+    # Measure using final stroke width so glyph edges are never clipped.
     measure_img = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
     measure_draw = ImageDraw.Draw(measure_img)
-    bbox = measure_draw.textbbox((0, 0), word, font=font)
-    w = bbox[2] - bbox[0]
-    h = bbox[3] - bbox[1]
+    left, top, right, bottom = measure_draw.textbbox(
+        (0, 0),
+        word,
+        font=font,
+        stroke_width=outline_width,
+    )
+    text_w = right - left
+    text_h = bottom - top
 
     pad = 26 if not FAST_RENDER_MODE else 14
-    img_w = max(16, w + pad * 2)
-    img_h = max(16, h + pad * 2)
+    # Extra bottom room avoids descender/stroke cut on words like "FEEL", Arabic letters, etc.
+    extra_bottom = max(6, outline_width)
+    img_w = max(16, text_w + pad * 2 + shadow_offset)
+    img_h = max(16, text_h + pad * 2 + shadow_offset + extra_bottom)
     img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    x = pad
-    y = pad
+    x = pad - left
+    y = pad - top
     
     # Hormozi styling: Thick stroke, high contrast
     outline_color = (15, 15, 20, 255)
-    outline_width = style["outline_width"]
     
     # Dynamic styling (emphasize longer words with yellow)
     is_emphasized = bool(word_data.get("highlight")) or len(word) > 6
@@ -326,8 +334,7 @@ def create_word_clip(word_data, resolution, config):
     fill_color = (*accent_color, 255) if is_emphasized else (255, 255, 255, 255)
     
     # Shadow offset (Simulating a premium glow/drop shadow)
-    if not FAST_RENDER_MODE:
-        shadow_offset = 8
+    if shadow_offset > 0:
         draw.text((x + shadow_offset, y + shadow_offset), word, font=font, fill=(0,0,0,150), stroke_width=outline_width, stroke_fill=(0,0,0,100))
     
     # Main bold text
