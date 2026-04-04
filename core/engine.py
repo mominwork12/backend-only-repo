@@ -370,7 +370,23 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
             working_text = auto_correct_subtitle_text(working_text)
 
         words = working_text.strip().split()
+        if not words:
+            # Translation/correction can occasionally collapse text; fall back to original prompt.
+            words = str(request.text or "").strip().split()
+
+        if not words:
+            await update_job_progress(
+                job_id,
+                JobStatus.ERROR,
+                "No Text",
+                0,
+                "No valid caption text found after processing.",
+                error="No valid caption text found after processing.",
+            )
+            return
+
         speed_ms = int(getattr(request.config, 'speed', '250'))
+        speed_ms = max(120, min(1200, speed_ms))
         if FAST_RENDER_MODE and len(words) > 80 and speed_ms > 180:
             speed_ms = 180
         speed_sec = speed_ms / 1000.0
@@ -444,6 +460,15 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
                         ),
                         loop,
                     )
+
+            if not word_clips and words:
+                fallback_end = min(duration, 0.9)
+                fallback_clip = create_word_clip(
+                    {"word": words[0], "start": 0.0, "end": fallback_end, "highlight": False},
+                    resolution=render_dims,
+                    config=request.config,
+                )
+                word_clips.append(fallback_clip)
                     
             # Stitch them together
             layers = [bg] + word_clips
@@ -480,6 +505,16 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
     try:
         await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 10, "Transcribing Audio via Groq AI...")
         timestamps = await transcribe_audio_to_words(audio_path)
+        if not timestamps:
+            await update_job_progress(
+                job_id,
+                JobStatus.ERROR,
+                "No Speech",
+                0,
+                "No spoken words detected in audio.",
+                error="No spoken words detected in audio.",
+            )
+            return
 
         target_language = getattr(config, "target_language", "original")
         if target_language not in {"original", "", None} and timestamps:
@@ -583,6 +618,16 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
                         ),
                         loop,
                     )
+
+            if not word_clips and local_timestamps:
+                fallback_word = str(local_timestamps[0].get("word", "CAPTION")).strip() or "CAPTION"
+                fallback_end = min(duration, 0.9)
+                fallback_clip = create_word_clip(
+                    {"word": fallback_word, "start": 0.0, "end": fallback_end, "highlight": False},
+                    resolution=render_dims,
+                    config=config,
+                )
+                word_clips.append(fallback_clip)
                     
             # Stitch them together
             layers = [bg] + word_clips
