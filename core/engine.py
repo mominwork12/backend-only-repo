@@ -31,6 +31,8 @@ ARABIC_FONT_PATH = "fonts/arial.ttf"
 FAST_RENDER_MODE = os.getenv("FAST_RENDER_MODE", "1").strip().lower() in {"1", "true", "yes", "on"}
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 RTL_RE = re.compile(r"[\u0590-\u05FF\u0600-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
+RESOLUTION_LEVEL = {"540p": 1, "720p": 2, "1080p": 3, "1440p": 4, "2160p": 5}
+LEVEL_TO_RESOLUTION = {v: k for k, v in RESOLUTION_LEVEL.items()}
 
 try:
     import arabic_reshaper  # type: ignore
@@ -104,13 +106,52 @@ def load_caption_font_for_text(text: str, size: int):
     return ImageFont.load_default()
 
 
-def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
+def get_render_profile(
+    aspect_ratio: str,
+    resolution: str,
+    fps: int,
+    estimated_duration: float = 12.0,
+    word_count: int = 0,
+):
     ratio = aspect_ratio if aspect_ratio in {"9:16", "16:9", "1:1"} else "9:16"
     requested_resolution = str(resolution or "720p").lower()
 
     supported_resolutions = {"2160p", "1440p", "1080p", "720p", "540p"}
     if requested_resolution not in supported_resolutions:
         requested_resolution = "720p"
+
+    try:
+        target_fps = int(fps)
+    except Exception:
+        target_fps = 24
+
+    target_fps = max(12, min(60, target_fps))
+
+    tuning_notes = []
+    if FAST_RENDER_MODE:
+        max_resolution = "1080p"
+        max_fps = 30
+
+        # Long scripts/audio are auto-optimized to avoid Render free-tier stalls.
+        if estimated_duration >= 25 or word_count >= 120:
+            max_resolution = "720p"
+            max_fps = 24
+        if estimated_duration >= 50 or word_count >= 220:
+            max_resolution = "540p"
+            max_fps = 20
+
+        requested_level = RESOLUTION_LEVEL.get(requested_resolution, RESOLUTION_LEVEL["720p"])
+        allowed_level = RESOLUTION_LEVEL.get(max_resolution, RESOLUTION_LEVEL["720p"])
+        capped_level = min(requested_level, allowed_level)
+        capped_resolution = LEVEL_TO_RESOLUTION[capped_level]
+
+        if capped_resolution != requested_resolution:
+            tuning_notes.append(f"resolution auto-tuned to {capped_resolution.upper()}")
+            requested_resolution = capped_resolution
+
+        if target_fps > max_fps:
+            tuning_notes.append(f"fps auto-tuned to {max_fps}")
+            target_fps = max_fps
 
     # Keep hosted rendering responsive by default.
     if ratio == "9:16":
@@ -139,14 +180,8 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
         }
 
     render_dims = dims_by_resolution[requested_resolution]
-
-    try:
-        target_fps = int(fps)
-    except Exception:
-        target_fps = 24
-
-    target_fps = max(12, min(60, target_fps))
-    return render_dims, target_fps, requested_resolution.upper()
+    note = "; ".join(tuning_notes)
+    return render_dims, target_fps, requested_resolution.upper(), note
 
 
 def get_caption_style(config):
@@ -358,11 +393,16 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
             duration = current_time if current_time > 0 else 1.0
             
             # Hosted-safe render profile to avoid long stalls on free CPU.
-            render_dims, render_fps, render_resolution = get_render_profile(
+            render_dims, render_fps, render_resolution, tuning_note = get_render_profile(
                 request.config.aspect_ratio,
                 getattr(request.config, "resolution", "720p"),
                 getattr(request.config, "fps", 24),
+                estimated_duration=duration,
+                word_count=len(timestamps),
             )
+            profile_message = f"Preparing frames at {render_resolution} / {render_fps} FPS..."
+            if tuning_note:
+                profile_message = f"{profile_message} ({tuning_note})"
 
             asyncio.run_coroutine_threadsafe(
                 update_job_progress(
@@ -370,7 +410,7 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
                     JobStatus.RENDERING,
                     "Preparing Render",
                     30,
-                    f"Preparing frames at {render_resolution} / {render_fps} FPS...",
+                    profile_message,
                 ),
                 loop,
             )
@@ -412,7 +452,7 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
                 logger=logger,
                 preset='ultrafast',
                 threads=2,
-                bitrate='1200k' if FAST_RENDER_MODE else '1500k',
+                bitrate='1000k' if FAST_RENDER_MODE else '1500k',
             )
             
             return f"/api/v1/outputs/{video_filename}"
@@ -492,11 +532,16 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
 
             duration = audio_clip.duration
             
-            render_dims, render_fps, render_resolution = get_render_profile(
+            render_dims, render_fps, render_resolution, tuning_note = get_render_profile(
                 config.aspect_ratio,
                 getattr(config, "resolution", "720p"),
                 getattr(config, "fps", 24),
+                estimated_duration=duration,
+                word_count=len(local_timestamps),
             )
+            profile_message = f"Preparing frames at {render_resolution} / {render_fps} FPS..."
+            if tuning_note:
+                profile_message = f"{profile_message} ({tuning_note})"
 
             asyncio.run_coroutine_threadsafe(
                 update_job_progress(
@@ -504,7 +549,7 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
                     JobStatus.RENDERING,
                     "Preparing Render",
                     30,
-                    f"Preparing frames at {render_resolution} / {render_fps} FPS...",
+                    profile_message,
                 ),
                 loop,
             )
@@ -547,7 +592,7 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
                 logger=logger,
                 preset='ultrafast',
                 threads=2,
-                bitrate='1400k' if FAST_RENDER_MODE else '1800k',
+                bitrate='1200k' if FAST_RENDER_MODE else '1800k',
                 audio_codec='aac',
             )
             
