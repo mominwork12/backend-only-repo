@@ -33,16 +33,35 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
     ratio = aspect_ratio if aspect_ratio in {"9:16", "16:9", "1:1"} else "9:16"
     requested_resolution = str(resolution or "720p").lower()
 
-    if requested_resolution not in {"1080p", "720p", "540p"}:
+    supported_resolutions = {"2160p", "1440p", "1080p", "720p", "540p"}
+    if requested_resolution not in supported_resolutions:
         requested_resolution = "720p"
 
     # Keep hosted rendering responsive by default.
     if ratio == "9:16":
-        dims_by_resolution = {"1080p": (1080, 1920), "720p": (720, 1280), "540p": (540, 960)}
+        dims_by_resolution = {
+            "2160p": (2160, 3840),
+            "1440p": (1440, 2560),
+            "1080p": (1080, 1920),
+            "720p": (720, 1280),
+            "540p": (540, 960),
+        }
     elif ratio == "16:9":
-        dims_by_resolution = {"1080p": (1920, 1080), "720p": (1280, 720), "540p": (960, 540)}
+        dims_by_resolution = {
+            "2160p": (3840, 2160),
+            "1440p": (2560, 1440),
+            "1080p": (1920, 1080),
+            "720p": (1280, 720),
+            "540p": (960, 540),
+        }
     else:
-        dims_by_resolution = {"1080p": (1080, 1080), "720p": (720, 720), "540p": (540, 540)}
+        dims_by_resolution = {
+            "2160p": (2160, 2160),
+            "1440p": (1440, 1440),
+            "1080p": (1080, 1080),
+            "720p": (720, 720),
+            "540p": (540, 540),
+        }
 
     render_dims = dims_by_resolution[requested_resolution]
 
@@ -51,7 +70,7 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
     except Exception:
         target_fps = 24
 
-    target_fps = max(12, min(30, target_fps))
+    target_fps = max(12, min(60, target_fps))
     return render_dims, target_fps, requested_resolution.upper()
 
 
