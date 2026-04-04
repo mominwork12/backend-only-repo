@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
 
-from schemas import GenerateTextRequest, GenerationConfig, JobStatus
+from schemas import GenerateTextRequest, GenerateBatchRequest, GenerationConfig, JobStatus
 from core.jobs import create_job, sse_event_generator, get_job, update_job_progress
 from core.engine import process_text_generation, process_audio_generation
 
@@ -47,6 +47,24 @@ async def generate_video(request: GenerateTextRequest, background_tasks: Backgro
     
     # Return immediately to the client with the job ID
     return {"job_id": job_id, "status": "pending"}
+
+
+@app.post("/api/v1/generate/batch", status_code=status.HTTP_202_ACCEPTED)
+async def generate_video_batch(request: GenerateBatchRequest, background_tasks: BackgroundTasks):
+    texts = [t.strip() for t in request.texts if t and t.strip()]
+    if not texts:
+        raise HTTPException(status_code=400, detail="No valid text items found for batch generation.")
+    if len(texts) > 20:
+        raise HTTPException(status_code=400, detail="Batch size too large. Maximum 20 items.")
+
+    jobs = []
+    for text in texts:
+        job_id = create_job()
+        payload = GenerateTextRequest(text=text, voice=request.voice, config=request.config)
+        background_tasks.add_task(process_text_generation, job_id, payload)
+        jobs.append({"job_id": job_id, "status": "pending"})
+
+    return {"count": len(jobs), "jobs": jobs}
 
 @app.post("/api/v1/generate/audio", status_code=status.HTTP_202_ACCEPTED)
 async def generate_video_from_audio(

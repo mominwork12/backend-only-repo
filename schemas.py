@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
 class JobStatus(str, Enum):
@@ -34,8 +34,22 @@ class GenerationConfig(BaseModel):
     text_size: str = "80"
     main_color: str = "#FFD700"
     position: str = "Center"
+    auto_subtitle_correction: bool = True
+    source_language: str = "auto"
+    target_language: str = "original"
+    accessibility_preset: str = "default"
+    keyword_highlighting: bool = True
+    smart_silence_removal: bool = False
+    silence_gap_threshold_ms: int = 600
+    batch_processing: bool = False
 
 class GenerateTextRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
     voice: str = "en-US-ChristopherNeural" # Default edge-tts voice
+    config: GenerationConfig = Field(default_factory=GenerationConfig)
+
+
+class GenerateBatchRequest(BaseModel):
+    texts: List[str] = Field(default_factory=list)
+    voice: str = "en-US-ChristopherNeural"
     config: GenerationConfig = Field(default_factory=GenerationConfig)

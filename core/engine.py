@@ -5,10 +5,22 @@ from PIL import Image, ImageDraw, ImageFont
 
 from schemas import JobStatus, GenerateTextRequest
 from core.jobs import update_job_progress, get_job
+from core.caption_utils import (
+    auto_correct_subtitle_text,
+    compact_timestamps_by_silence,
+    mark_keywords,
+)
 from ai.audio import generate_speech_and_subtitles
 from ai.transcribe import transcribe_audio_to_words
+from ai.translate import translate_text_if_needed
 
-from moviepy.editor import ColorClip, AudioFileClip, ImageClip, CompositeVideoClip
+from moviepy.editor import (
+    ColorClip,
+    AudioFileClip,
+    ImageClip,
+    CompositeVideoClip,
+    concatenate_audioclips,
+)
 import proglog
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
@@ -48,6 +60,36 @@ def get_render_profile(aspect_ratio: str, resolution: str, fps: int):
 
     return render_dims, target_fps, requested_resolution.upper()
 
+
+def get_caption_style(config):
+    base_size = 130
+    try:
+        configured_size = int(getattr(config, "text_size", "80"))
+        base_size = max(48, min(180, configured_size))
+    except Exception:
+        pass
+
+    main_color = getattr(config, "main_color", "#FFD700")
+    preset = str(getattr(config, "accessibility_preset", "default")).strip().lower()
+    style = {
+        "font_size": base_size,
+        "outline_width": 12,
+        "main_color": main_color,
+    }
+
+    if preset == "high_contrast":
+        style["main_color"] = "#FFFF00"
+        style["outline_width"] = 14
+    elif preset == "dyslexia_friendly":
+        style["font_size"] = max(style["font_size"], 110)
+        style["main_color"] = "#FFFFFF"
+    elif preset == "larger_text":
+        style["font_size"] = max(style["font_size"], 140)
+    elif preset == "safe_colors":
+        style["main_color"] = "#00F5FF"
+
+    return style
+
 class SSEVideoLogger(proglog.ProgressBarLogger):
     """
     Hooks directly into MoviePy's rendering engine and pushes live 0-100% 
@@ -74,7 +116,7 @@ class SSEVideoLogger(proglog.ProgressBarLogger):
                 self.loop
             )
 
-def create_word_clip(word_data, resolution):
+def create_word_clip(word_data, resolution, config):
     """
     Draws Hormozi-style text captions completely from scratch using Pillow.
     Guarantees it works natively on Windows without ImageMagick.
@@ -82,7 +124,8 @@ def create_word_clip(word_data, resolution):
     img = Image.new('RGBA', resolution, (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    font_size = 130
+    style = get_caption_style(config)
+    font_size = style["font_size"]
     try:
         font = ImageFont.truetype(FONT_PATH, font_size)
     except:
@@ -100,11 +143,16 @@ def create_word_clip(word_data, resolution):
     
     # Hormozi styling: Thick stroke, high contrast
     outline_color = (15, 15, 20, 255)
-    outline_width = 12
+    outline_width = style["outline_width"]
     
     # Dynamic styling (emphasize longer words with yellow)
-    is_emphasized = len(word) > 4
-    fill_color = (255, 230, 0, 255) if is_emphasized else (255, 255, 255, 255)
+    is_emphasized = bool(word_data.get("highlight")) or len(word) > 6
+    accent = style["main_color"].lstrip("#")
+    try:
+        accent_color = tuple(int(accent[i:i+2], 16) for i in (0, 2, 4))
+    except Exception:
+        accent_color = (255, 230, 0)
+    fill_color = (*accent_color, 255) if is_emphasized else (255, 255, 255, 255)
     
     # Shadow offset (Simulating a premium glow/drop shadow)
     shadow_offset = 8
@@ -129,8 +177,20 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
     loop = asyncio.get_running_loop()
     try:
         await update_job_progress(job_id, JobStatus.AUDIO_GEN, "Parsing Text", 10, "Extracting text into timing sequences...")
-        
-        words = request.text.strip().split()
+
+        working_text = request.text
+        if getattr(request.config, "target_language", "original") not in {"original", "", None}:
+            await update_job_progress(job_id, JobStatus.AUDIO_GEN, "Translating", 14, "Translating subtitles...")
+            working_text = await translate_text_if_needed(
+                working_text,
+                getattr(request.config, "source_language", "auto"),
+                getattr(request.config, "target_language", "original"),
+            )
+
+        if getattr(request.config, "auto_subtitle_correction", True):
+            working_text = auto_correct_subtitle_text(working_text)
+
+        words = working_text.strip().split()
         speed_ms = int(getattr(request.config, 'speed', '250'))
         speed_sec = speed_ms / 1000.0
         
@@ -143,7 +203,12 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
                 "end": current_time + speed_sec
             })
             current_time += speed_sec
-            
+
+        timestamps = mark_keywords(
+            timestamps,
+            enable=bool(getattr(request.config, "keyword_highlighting", True)),
+        )
+
         await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 20, f"Recovered {len(timestamps)} word boundaries...")
 
         # 2: Rendering Engine Thread Wrapper
@@ -179,7 +244,7 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
             for idx, t in enumerate(timestamps):
                 # Sanity fallback check
                 if t['start'] < duration and t['end'] <= duration:
-                    clip = create_word_clip(t, resolution=render_dims)
+                    clip = create_word_clip(t, resolution=render_dims, config=request.config)
                     word_clips.append(clip)
                 if total_words and (((idx + 1) % 8 == 0) or (idx + 1 == total_words)):
                     prep_perc = 30 + int(((idx + 1) / total_words) * 10)
@@ -226,7 +291,37 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
     try:
         await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 10, "Transcribing Audio via Groq AI...")
         timestamps = await transcribe_audio_to_words(audio_path)
-        
+
+        target_language = getattr(config, "target_language", "original")
+        if target_language not in {"original", "", None} and timestamps:
+            await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Translating", 14, "Translating captions...")
+            source_text = " ".join(str(item.get("word", "")).strip() for item in timestamps).strip()
+            translated_text = await translate_text_if_needed(
+                source_text,
+                getattr(config, "source_language", "auto"),
+                target_language,
+            )
+            if getattr(config, "auto_subtitle_correction", True):
+                translated_text = auto_correct_subtitle_text(translated_text)
+
+            translated_words = [w for w in translated_text.split() if w]
+            if translated_words:
+                total_duration = max(float(timestamps[-1].get("end", 0.0)), 0.1)
+                step = total_duration / max(len(translated_words), 1)
+                rebuilt = []
+                cursor = 0.0
+                for word in translated_words:
+                    start = cursor
+                    end = min(total_duration, cursor + step)
+                    rebuilt.append({"word": word, "start": start, "end": end})
+                    cursor = end
+                timestamps = rebuilt
+
+        timestamps = mark_keywords(
+            timestamps,
+            enable=bool(getattr(config, "keyword_highlighting", True)),
+        )
+
         await update_job_progress(job_id, JobStatus.TRANSCRIBING, "Extracting Timestamps", 20, f"Recovered {len(timestamps)} word boundaries...")
 
         def render_video():
@@ -235,6 +330,24 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
             
             # Mount audio
             audio_clip = AudioFileClip(audio_path)
+            local_timestamps = list(timestamps)
+
+            if bool(getattr(config, "smart_silence_removal", False)) and local_timestamps:
+                threshold_ms = int(getattr(config, "silence_gap_threshold_ms", 600))
+                threshold_seconds = max(0.2, min(3.0, threshold_ms / 1000.0))
+                compacted_timestamps, keep_segments = compact_timestamps_by_silence(
+                    local_timestamps,
+                    gap_threshold_seconds=threshold_seconds,
+                )
+                if keep_segments:
+                    clipped_audio = []
+                    for seg_start, seg_end in keep_segments:
+                        if seg_end - seg_start > 0.02:
+                            clipped_audio.append(audio_clip.subclip(seg_start, seg_end))
+                    if clipped_audio:
+                        audio_clip = concatenate_audioclips(clipped_audio)
+                        local_timestamps = compacted_timestamps
+
             duration = audio_clip.duration
             
             render_dims, render_fps, render_resolution = get_render_profile(
@@ -258,11 +371,11 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
             bg = ColorClip(size=render_dims, color=(30, 30, 42)).set_duration(duration)
             
             word_clips = []
-            total_words = len(timestamps)
-            for idx, t in enumerate(timestamps):
+            total_words = len(local_timestamps)
+            for idx, t in enumerate(local_timestamps):
                 # Sanity fallback check
                 if t['start'] < duration and t['end'] <= duration:
-                    clip = create_word_clip(t, resolution=render_dims)
+                    clip = create_word_clip(t, resolution=render_dims, config=config)
                     word_clips.append(clip)
                 if total_words and (((idx + 1) % 8 == 0) or (idx + 1 == total_words)):
                     prep_perc = 30 + int(((idx + 1) / total_words) * 10)
