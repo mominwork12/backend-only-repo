@@ -29,6 +29,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 FONT_PATH = "fonts/Montserrat-Black.ttf"
 ARABIC_FONT_PATH = "fonts/arial.ttf"
 FAST_RENDER_MODE = os.getenv("FAST_RENDER_MODE", "1").strip().lower() in {"1", "true", "yes", "on"}
+MIN_OUTPUT_FILE_BYTES = int(os.getenv("MIN_OUTPUT_FILE_BYTES", "20000"))
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 RTL_RE = re.compile(r"[\u0590-\u05FF\u0600-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
 RESOLUTION_LEVEL = {"540p": 1, "720p": 2, "1080p": 3, "1440p": 4, "2160p": 5}
@@ -104,6 +105,14 @@ def load_caption_font_for_text(text: str, size: int):
             continue
 
     return ImageFont.load_default()
+
+
+def ensure_valid_output_file(path: str):
+    if not os.path.exists(path):
+        raise RuntimeError("Rendered file missing after encode.")
+    file_size = os.path.getsize(path)
+    if file_size < MIN_OUTPUT_FILE_BYTES:
+        raise RuntimeError(f"Rendered file too small ({file_size} bytes).")
 
 
 def get_render_profile(
@@ -486,6 +495,7 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
                 threads=2,
                 bitrate='1000k' if FAST_RENDER_MODE else '1500k',
             )
+            ensure_valid_output_file(out_path)
             
             return f"/api/v1/outputs/{video_filename}"
         
@@ -647,6 +657,7 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
                 bitrate='1200k' if FAST_RENDER_MODE else '1800k',
                 audio_codec='aac',
             )
+            ensure_valid_output_file(out_path)
             
             return f"/api/v1/outputs/{video_filename}"
         
