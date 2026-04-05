@@ -6,9 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
 
-from schemas import GenerateTextRequest, GenerateBatchRequest, GenerationConfig, JobStatus
+from schemas import GenerateTextRequest, GenerateBatchRequest, GenerationConfig, HookSuggestionRequest, JobStatus
 from core.jobs import create_job, sse_event_generator, get_job, update_job_progress
 from core.engine import process_text_generation, process_audio_generation
+from ai.hooks import generate_viral_hooks
 
 app = FastAPI(title="TextMotion AI Backend")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
@@ -65,6 +66,12 @@ async def generate_video_batch(request: GenerateBatchRequest, background_tasks: 
         jobs.append({"job_id": job_id, "status": "pending"})
 
     return {"count": len(jobs), "jobs": jobs}
+
+
+@app.post("/api/v1/hooks/suggest")
+async def suggest_hooks(request: HookSuggestionRequest):
+    hooks = await generate_viral_hooks(request.prompt, request.niche)
+    return {"hooks": hooks}
 
 @app.post("/api/v1/generate/audio", status_code=status.HTTP_202_ACCEPTED)
 async def generate_video_from_audio(

@@ -357,7 +357,18 @@ def create_word_clip(word_data, resolution, config):
     dur = max(0.1, duration) # ensure at least 0.1s pop
     
     clip = clip.set_start(word_data['start']).set_end(word_data['start'] + dur)
-    clip = clip.set_position(("center", "center"))
+
+    effect_id = str(getattr(config, "text_effect", "")).strip().upper()
+    requested_position = str(getattr(config, "position", "Center")).strip().lower()
+    if effect_id == "SUBTITLE_TRACKING" and requested_position in {"", "center"}:
+        requested_position = "bottom center"
+
+    if requested_position == "top center":
+        clip = clip.set_position(("center", int(resolution[1] * 0.2)))
+    elif requested_position == "bottom center":
+        clip = clip.set_position(("center", int(resolution[1] * 0.8)))
+    else:
+        clip = clip.set_position(("center", "center"))
     
     return clip
 

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;900&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "secondary-container": "#e00363",
+            "on-error-container": "#ffdad6",
+            "inverse-primary": "#00696e",
+            "surface-variant": "#34343d",
+            "secondary-fixed-dim": "#ffb1c0",
+            "surface-container-high": "#292932",
+            "on-tertiary-fixed-variant": "#5700c9",
+            "on-primary-container": "#006c71",
+            "on-primary": "#003739",
+            "on-tertiary": "#3c0090",
+            "on-surface": "#e4e1ed",
+            "error": "#ffb4ab",
+            "on-error": "#690005",
+            "inverse-surface": "#e4e1ed",
+            "on-secondary-fixed": "#3f0017",
+            "on-secondary-container": "#fff6f6",
+            "background": "#13131b",
+            "on-secondary": "#660029",
+            "secondary": "#ffb1c0",
+            "primary-fixed": "#63f7ff",
+            "inverse-on-surface": "#302f39",
+            "primary-container": "#00f5ff",
+            "error-container": "#93000a",
+            "tertiary": "#fef8ff",
+            "tertiary-container": "#e5d7ff",
+            "on-secondary-fixed-variant": "#90003d",
+            "secondary-fixed": "#ffd9df",
+            "on-primary-fixed-variant": "#004f53",
+            "on-tertiary-fixed": "#23005b",
+            "tertiary-fixed": "#e9ddff",
+            "on-surface-variant": "#b9caca",
+            "outline-variant": "#3a494a",
+            "surface-bright": "#393842",
+            "outline": "#849495",
+            "on-primary-fixed": "#002021",
+            "primary": "#e9feff",
+            "surface-container-lowest": "#0d0d16",
+            "surface-dim": "#13131b",
+            "surface-container-low": "#1b1b23",
+            "surface-container-highest": "#34343d",
+            "on-background": "#e4e1ed",
+            "surface-container": "#1f1f28",
+            "primary-fixed-dim": "#00dce5",
+            "on-tertiary-container": "#751fff",
+            "tertiary-fixed-dim": "#d1bcff",
+            "surface-tint": "#00dce5",
+            "surface": "#13131b"
+          },
+          fontFamily: {
+            "headline": ["Space Grotesk"],
+            "body": ["Inter"],
+            "label": ["Inter"]
+          },
+          borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .neon-glow-primary {
+      box-shadow: 0 0 15px 0 rgba(0, 245, 255, 0.3);
+    }
+    .neon-glow-secondary {
+      box-shadow: 0 0 15px 0 rgba(224, 3, 99, 0.4);
+    }
+    .input-focus-line::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      width: 0;
+      height: 2px;
+      background: #00f5ff;
+      transition: all 0.3s ease;
+      transform: translateX(-50%);
+    }
+    .input-focus-container:focus-within .input-focus-line::after {
+      width: 100%;
+    }
+  </style>
+</head>
+<body class="bg-[#13131b] text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar Implementation from JSON -->
+<nav class="fixed top-0 w-full z-50 bg-[#1b1b23]/80 backdrop-blur-xl bg-gradient-to-b from-white/5 to-transparent shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+<div class="flex justify-between items-center px-8 h-16 w-full max-w-[1920px] mx-auto">
+<div class="text-2xl font-black tracking-tighter text-[#00F5FF] drop-shadow-[0_0_8px_rgba(0,245,255,0.4)] font-headline uppercase">
+        TextMotion AI
+      </div>
+<div class="hidden md:flex items-center space-x-8 font-headline tracking-tight font-bold uppercase text-sm">
+<a class="text-slate-400 hover:text-white transition-colors" href="#">Generate</a>
+<a class="text-slate-400 hover:text-white transition-colors" href="#">Text Effects</a>
+<a class="text-slate-400 hover:text-white transition-colors" href="#">Export</a>
+</div>
+<div class="flex items-center space-x-6">
+<button class="material-symbols-outlined text-slate-400 hover:text-[#00F5FF] transition-all active:scale-95 duration-200">settings</button>
+<button class="text-[#00F5FF] border-b-2 border-[#00F5FF] pb-1 shadow-[0_4px_12px_-2px_rgba(0,245,255,0.3)] flex items-center gap-2 transition-all active:scale-95 duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_circle</span>
+</button>
+</div>
+</div>
+</nav>
+<main class="pt-32 pb-20 px-6 md:px-12 max-w-7xl mx-auto min-h-screen">
+<header class="mb-16">
+<h1 class="font-headline text-6xl md:text-8xl font-black tracking-tighter uppercase text-on-surface leading-none mb-4">
+        Account <span class="text-transparent bg-clip-text bg-gradient-to-r from-primary-container to-secondary-container">Settings</span>
+</h1>
+<p class="font-headline text-primary-container tracking-widest text-sm font-bold uppercase">System Configuration // User ID: NA-8829</p>
+</header>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+<!-- Sidebar Navigation -->
+<aside class="lg:col-span-3 space-y-1">
+<nav class="flex flex-col">
+<a class="flex items-center space-x-4 px-6 py-4 bg-surface-container-high text-primary-container border-l-2 border-primary-container font-headline font-bold uppercase text-xs tracking-widest" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">person</span>
+<span>Profile</span>
+</a>
+<a class="flex items-center space-x-4 px-6 py-4 hover:bg-white/5 text-on-surface-variant transition-all font-headline font-bold uppercase text-xs tracking-widest group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary-container transition-colors">security</span>
+<span>Security</span>
+</a>
+<a class="flex items-center space-x-4 px-6 py-4 hover:bg-white/5 text-on-surface-variant transition-all font-headline font-bold uppercase text-xs tracking-widest group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary-container transition-colors">payments</span>
+<span>Billing</span>
+</a>
+<a class="flex items-center space-x-4 px-6 py-4 hover:bg-white/5 text-on-surface-variant transition-all font-headline font-bold uppercase text-xs tracking-widest group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary-container transition-colors">api</span>
+<span>API Access</span>
+</a>
+</nav>
+</aside>
+<!-- Content Area -->
+<div class="lg:col-span-9 space-y-8">
+<!-- Profile Section -->
+<section class="glass-card p-8 rounded-lg">
+<div class="flex flex-col md:flex-row gap-8 items-start">
+<div class="relative group">
+<div class="w-32 h-32 rounded-full border-2 border-primary-container p-1 neon-glow-primary overflow-hidden">
+<img alt="Profile Avatar" class="w-full h-full object-cover rounded-full" data-alt="Close-up of a high-tech robotic face with glowing cyan circuits and futuristic aesthetic, cinematic lighting, dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDMHCNtQxT21e9-2ObVxpACC63wFpLo0OwxPRw8hYIsNZ0B59NC54Mev7XlN38EuOonCcABabAkJ4-a4KOnkDINZEqrSYFr1hfTI5dHgb3f_Nh-nX7N56lwD33A4duzQuY7WBfMDPEh_2u4chnpQqW4mXUp-8ioKCNH0DBi7iP7rgMJQ73RZ1MuRGTiMOQbx8Qqb2nKPil7wvJWnqJve_p9QvZqe_xqWSdn2XErbzc1ai8lUPjmO3asTM2Q5lEbTudrF9VcB-ukJz1E"/>
+</div>
+<button class="absolute bottom-0 right-0 bg-primary-container text-on-primary p-2 rounded-full shadow-lg active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-sm">photo_camera</span>
+</button>
+</div>
+<div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+<div class="relative input-focus-container">
+<label class="block font-headline text-[10px] uppercase tracking-[0.15em] text-on-surface-variant mb-2 font-bold">Full Name</label>
+<input class="w-full bg-surface-container-highest border-none text-on-surface p-4 focus:ring-0 rounded-sm" type="text" value="Neon Auteur"/>
+<div class="input-focus-line"></div>
+</div>
+<div class="relative input-focus-container">
+<label class="block font-headline text-[10px] uppercase tracking-[0.15em] text-on-surface-variant mb-2 font-bold">Email Address</label>
+<input class="w-full bg-surface-container-highest border-none text-on-surface p-4 focus:ring-0 rounded-sm" type="email" value="auteur@textmotion.ai"/>
+<div class="input-focus-line"></div>
+</div>
+<div class="relative input-focus-container md:col-span-2">
+<label class="block font-headline text-[10px] uppercase tracking-[0.15em] text-on-surface-variant mb-2 font-bold">Language Preference</label>
+<select class="w-full bg-surface-container-highest border-none text-on-surface p-4 focus:ring-0 rounded-sm appearance-none cursor-pointer">
+<option>English (Universal)</option>
+<option>Japanese (Cyberpunk Standard)</option>
+<option>German (Industrial Tech)</option>
+</select>
+<div class="input-focus-line"></div>
+</div>
+</div>
+</div>
+<div class="mt-8 flex justify-end">
+<button class="bg-primary-container text-on-primary-fixed font-headline font-black uppercase text-xs tracking-widest px-8 py-4 rounded-sm hover:scale-[1.02] active:scale-95 transition-all neon-glow-primary">
+              Save Changes
+            </button>
+</div>
+</section>
+<!-- Subscription & Usage -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<section class="glass-card p-8 rounded-lg flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start mb-6">
+<h3 class="font-headline font-black uppercase text-sm tracking-widest text-on-surface">Current Plan</h3>
+<span class="px-3 py-1 bg-secondary-container/20 text-secondary-container border border-secondary-container/40 font-headline font-bold text-[10px] tracking-[0.2em] uppercase rounded-full neon-glow-secondary">PRO</span>
+</div>
+<p class="text-on-surface-variant text-sm mb-6 font-light">Unlocks 4K export, custom motion paths, and priority GPU rendering.</p>
+</div>
+<a class="text-primary-container font-headline font-bold uppercase text-[10px] tracking-widest flex items-center gap-2 hover:gap-4 transition-all group" href="#">
+              Manage Billing <span class="material-symbols-outlined text-sm transition-transform group-hover:translate-x-1">arrow_forward</span>
+</a>
+</section>
+<section class="glass-card p-8 rounded-lg">
+<h3 class="font-headline font-black uppercase text-sm tracking-widest text-on-surface mb-6">Usage Stats</h3>
+<div class="space-y-6">
+<div>
+<div class="flex justify-between text-[10px] font-headline font-bold uppercase tracking-widest mb-3">
+<span class="text-on-surface-variant">Videos Generated</span>
+<span class="text-primary-container">42 / 100</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest overflow-hidden rounded-full">
+<div class="h-full bg-primary-container neon-glow-primary transition-all duration-1000" style="width: 42%;"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-[10px] font-headline font-bold uppercase tracking-widest mb-3">
+<span class="text-on-surface-variant">Storage Space</span>
+<span class="text-secondary-container">8.4 GB / 20 GB</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest overflow-hidden rounded-full">
+<div class="h-full bg-secondary-container neon-glow-secondary transition-all duration-1000" style="width: 42%;"></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- API & Professional Tools -->
+<section class="glass-card p-8 rounded-lg">
+<div class="flex items-center justify-between mb-8">
+<h3 class="font-headline font-black uppercase text-sm tracking-widest text-on-surface">Professional API Tools</h3>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></div>
+<span class="font-headline font-bold text-[10px] uppercase tracking-widest text-primary-container">System Active</span>
+</div>
+</div>
+<div class="space-y-6">
+<div class="relative input-focus-container">
+<label class="block font-headline text-[10px] uppercase tracking-[0.15em] text-on-surface-variant mb-2 font-bold">API Access Key</label>
+<div class="flex gap-4">
+<input class="flex-1 bg-surface-container-lowest border-none text-on-surface-variant font-mono p-4 focus:ring-0 rounded-sm text-sm" readonly="" type="password" value="tm_live_7x9234kash829kllm"/>
+<button class="bg-surface-container-highest px-6 hover:text-primary-container transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">content_copy</span>
+</button>
+</div>
+<div class="input-focus-line"></div>
+</div>
+<div class="pt-4 flex flex-col md:flex-row items-center justify-between gap-4 border-t border-white/5">
+<p class="text-on-surface-variant text-[10px] uppercase tracking-widest font-medium">Use the API to automate motion text rendering in your own pipeline.</p>
+<a class="font-headline font-black uppercase text-xs tracking-[0.2em] text-primary-container hover:underline underline-offset-8" href="#">
+                View API Docs
+              </a>
+</div>
+</div>
+</section>
+</div>
+</div>
+</main>
+<!-- Footer Implementation from JSON -->
+<footer class="w-full py-8 border-t border-white/5 bg-[#13131b]">
+<div class="flex flex-col md:flex-row justify-between items-center px-12 w-full max-w-[1920px] mx-auto space-y-6 md:space-y-0">
+<div class="flex flex-col items-center md:items-start">
+<div class="text-[#00F5FF] font-bold font-headline uppercase tracking-widest mb-1">TextMotion AI</div>
+<div class="font-['Inter'] text-[10px] uppercase tracking-widest text-slate-500">
+          © 2024 TextMotion AI. The Neon Auteur Engine.
+        </div>
+</div>
+<div class="flex space-x-8 font-['Inter'] text-[10px] uppercase tracking-widest text-slate-600">
+<a class="hover:text-[#FF2D78] transition-colors opacity-80 hover:opacity-100" href="#">Documentation</a>
+<a class="hover:text-[#FF2D78] transition-colors opacity-80 hover:opacity-100" href="#">API</a>
+<a class="hover:text-[#FF2D78] transition-colors opacity-80 hover:opacity-100" href="#">Terms</a>
+<a class="hover:text-[#FF2D78] transition-colors opacity-80 hover:opacity-100" href="#">Privacy</a>
+</div>
+</div>
+</footer>
+</body></html>

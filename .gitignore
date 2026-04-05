@@ -12,3 +12,13 @@ testsprite_tests/
 
 # Keep env template committed
 !.env.example
+
+# Bundled frontend (full project snapshot)
+web/node_modules/
+web/.next/
+web/.vercel/
+web/.env*
+!web/.env.example
+web/testsprite_tests/
+web/testsprite_*.log
+web/tsconfig.tsbuildinfo

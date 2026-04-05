@@ -29,7 +29,7 @@ class GenerationConfig(BaseModel):
     resolution: str = "1080p"
     style: str = "tiktok"
     speed: str = "250"
-    text_effect: str = "HORMOZI BOLD POP"
+    text_effect: str = "HORMOZI_DOMINANCE"
     font_family: str = "Space Grotesk"
     text_size: str = "80"
     main_color: str = "#FFD700"
@@ -42,6 +42,9 @@ class GenerationConfig(BaseModel):
     smart_silence_removal: bool = True
     silence_gap_threshold_ms: int = 500
     batch_processing: bool = False
+    plan_tier: str = "free"
+    watermark_enabled: bool = True
+    watermark_text: str = "TextMotionAI"
 
 class GenerateTextRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
@@ -53,3 +56,8 @@ class GenerateBatchRequest(BaseModel):
     texts: List[str] = Field(default_factory=list)
     voice: str = "en-US-ChristopherNeural"
     config: GenerationConfig = Field(default_factory=GenerationConfig)
+
+
+class HookSuggestionRequest(BaseModel):
+    prompt: str = Field(default="", max_length=5000)
+    niche: str = Field(default="general", max_length=64)
