@@ -1,6 +1,8 @@
 import os
 import asyncio
 import re
+import json
+import subprocess
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -30,6 +32,7 @@ FONT_PATH = "fonts/Montserrat-Black.ttf"
 ARABIC_FONT_PATH = "fonts/arial.ttf"
 FAST_RENDER_MODE = os.getenv("FAST_RENDER_MODE", "1").strip().lower() in {"1", "true", "yes", "on"}
 MIN_OUTPUT_FILE_BYTES = int(os.getenv("MIN_OUTPUT_FILE_BYTES", "20000"))
+MIN_OUTPUT_DURATION_SECONDS = float(os.getenv("MIN_OUTPUT_DURATION_SECONDS", "0.05"))
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 RTL_RE = re.compile(r"[\u0590-\u05FF\u0600-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
 RESOLUTION_LEVEL = {"540p": 1, "720p": 2, "1080p": 3, "1440p": 4, "2160p": 5}
@@ -113,6 +116,54 @@ def ensure_valid_output_file(path: str):
     file_size = os.path.getsize(path)
     if file_size < MIN_OUTPUT_FILE_BYTES:
         raise RuntimeError(f"Rendered file too small ({file_size} bytes).")
+
+
+def ensure_playable_mp4(path: str):
+    """
+    Validate that the encoded MP4 is structurally decodable before reporting DONE.
+    Falls back to size-only validation if ffprobe is unavailable.
+    """
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration:stream=codec_type,codec_name",
+                "-of",
+                "json",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception:
+        return
+
+    if probe.returncode != 0 or not probe.stdout.strip():
+        raise RuntimeError("ffprobe failed to validate rendered MP4 output.")
+
+    try:
+        meta = json.loads(probe.stdout)
+    except Exception as exc:
+        raise RuntimeError("Failed to parse ffprobe output for rendered MP4.") from exc
+
+    streams = meta.get("streams", []) or []
+    has_video_stream = any(s.get("codec_type") == "video" for s in streams)
+    if not has_video_stream:
+        raise RuntimeError("Rendered MP4 has no video stream.")
+
+    format_meta = meta.get("format", {}) or {}
+    raw_duration = format_meta.get("duration")
+    try:
+        duration = float(raw_duration)
+    except Exception:
+        duration = 0.0
+
+    if duration < MIN_OUTPUT_DURATION_SECONDS:
+        raise RuntimeError(f"Rendered MP4 duration too short ({duration:.3f}s).")
 
 
 def get_render_profile(
@@ -501,12 +552,16 @@ async def process_text_generation(job_id: str, request: GenerateTextRequest):
             final_video.write_videofile(
                 out_path,
                 fps=render_fps,
+                codec="libx264",
+                audio=False,
                 logger=logger,
                 preset='ultrafast',
                 threads=2,
                 bitrate='1000k' if FAST_RENDER_MODE else '1500k',
+                ffmpeg_params=["-movflags", "+faststart", "-pix_fmt", "yuv420p"],
             )
             ensure_valid_output_file(out_path)
+            ensure_playable_mp4(out_path)
             
             return f"/api/v1/outputs/{video_filename}"
         
@@ -662,13 +717,17 @@ async def process_audio_generation(job_id: str, audio_path: str, config):
             final_video.write_videofile(
                 out_path,
                 fps=render_fps,
+                codec="libx264",
                 logger=logger,
                 preset='ultrafast',
                 threads=2,
                 bitrate='1200k' if FAST_RENDER_MODE else '1800k',
                 audio_codec='aac',
+                audio_bitrate="128k",
+                ffmpeg_params=["-movflags", "+faststart", "-pix_fmt", "yuv420p"],
             )
             ensure_valid_output_file(out_path)
+            ensure_playable_mp4(out_path)
             
             return f"/api/v1/outputs/{video_filename}"
         

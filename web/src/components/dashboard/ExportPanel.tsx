@@ -14,6 +14,10 @@ type ExportPanelProps = {
 export default function ExportPanel({ isGenerating, videoUrl, batchVideoUrls, jobProgress }: ExportPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [beforeAfterSplit, setBeforeAfterSplit] = useState(50);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState("");
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const inferFilename = (url: string, fallbackName: string) => {
     try {
@@ -27,20 +31,61 @@ export default function ExportPanel({ isGenerating, videoUrl, batchVideoUrls, jo
   };
 
   const downloadVideo = async (url: string, fallbackName: string) => {
+    const maxAttempts = 8;
+
+    setIsDownloading(true);
+    setDownloadStatus("Preparing download...");
+
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        throw new Error(`HTTP_${res.status}`);
+      let blob: Blob | null = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        setDownloadStatus(`Downloading... (attempt ${attempt}/${maxAttempts})`);
+        const res = await fetch(url, { cache: "no-store" });
+        const contentType = (res.headers.get("content-type") || "").toLowerCase();
+
+        if (!res.ok) {
+          if ([429, 500, 502, 503, 504].includes(res.status) && attempt < maxAttempts) {
+            setDownloadStatus("Backend is waking up. Retrying...");
+            await sleep(Math.min(1200 * attempt, 7000));
+            continue;
+          }
+          throw new Error(`HTTP_${res.status}`);
+        }
+
+        if (contentType.includes("application/json")) {
+          throw new Error("JSON_ERROR_RESPONSE");
+        }
+
+        if (contentType.includes("text/html")) {
+          const html = (await res.text()).toLowerCase();
+          const isRenderWarmup =
+            html.includes("application loading") ||
+            html.includes("incoming http request detected");
+          if (isRenderWarmup && attempt < maxAttempts) {
+            setDownloadStatus("Render service is starting. Retrying...");
+            await sleep(Math.min(1200 * attempt, 7000));
+            continue;
+          }
+          throw new Error("HTML_ERROR_RESPONSE");
+        }
+
+        const candidate = await res.blob();
+        if (!candidate.size) {
+          if (attempt < maxAttempts) {
+            setDownloadStatus("Output is not ready yet. Retrying...");
+            await sleep(Math.min(1200 * attempt, 7000));
+            continue;
+          }
+          throw new Error("EMPTY_FILE");
+        }
+
+        blob = candidate;
+        break;
       }
 
-      const contentType = (res.headers.get("content-type") || "").toLowerCase();
-      if (contentType.includes("application/json")) {
-        throw new Error("JSON_ERROR_RESPONSE");
-      }
-
-      const blob = await res.blob();
-      if (!blob.size) {
-        throw new Error("EMPTY_FILE");
+      if (!blob) {
+        throw new Error("DOWNLOAD_UNAVAILABLE");
       }
 
       const objectUrl = URL.createObjectURL(blob);
@@ -51,8 +96,12 @@ export default function ExportPanel({ isGenerating, videoUrl, batchVideoUrls, jo
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
+      setDownloadStatus("Download started");
     } catch {
-      alert("This output file is no longer available on the server. Please generate again.");
+      alert("The backend is still waking up or the file is unavailable. Please wait 20-60 seconds and try again.");
+      setDownloadStatus("");
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -201,10 +250,14 @@ export default function ExportPanel({ isGenerating, videoUrl, batchVideoUrls, jo
               <button 
                 data-testid="download-webm-btn"
                 onClick={() => downloadVideo(videoUrl, `textmotion_${Date.now()}.mp4`)}
+                disabled={isDownloading}
                 className="w-full bg-primary-container text-on-primary-container py-4 flex items-center justify-center gap-3 font-bold uppercase tracking-widest hover:brightness-110 shadow-[0_0_20px_rgba(0,245,255,0.3)] transition-all rounded-sm">
                 <span className="material-symbols-outlined">download</span>
-                Download Video
+                {isDownloading ? "Preparing..." : "Download Video"}
               </button>
+              {downloadStatus ? (
+                <p className="text-[10px] text-on-surface-variant tracking-wide">{downloadStatus}</p>
+              ) : null}
               <button 
                 data-testid="copy-blob-btn"
                 onClick={() => navigator.clipboard.writeText(videoUrl)}
